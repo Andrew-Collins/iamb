@@ -348,6 +348,7 @@ pub struct TunableValues {
     pub username_display: UserDisplayStyle,
     pub default_room: Option<String>,
     pub open_command: Option<Vec<String>>,
+    pub notifications: bool,
     pub image_preview: Option<ImagePreviewValues>,
 }
 
@@ -367,6 +368,7 @@ pub struct Tunables {
     pub username_display: Option<UserDisplayStyle>,
     pub default_room: Option<String>,
     pub open_command: Option<Vec<String>>,
+    pub notifications: Option<bool>,
     pub image_preview: Option<ImagePreview>,
 }
 
@@ -388,6 +390,7 @@ impl Tunables {
             username_display: self.username_display.or(other.username_display),
             default_room: self.default_room.or(other.default_room),
             open_command: self.open_command.or(other.open_command),
+            notifications: self.notifications.or(other.notifications),
             image_preview: self.image_preview.or(other.image_preview),
         }
     }
@@ -407,6 +410,7 @@ impl Tunables {
             username_display: self.username_display.unwrap_or_default(),
             default_room: self.default_room,
             open_command: self.open_command,
+            notifications: self.notifications.unwrap_or(false),
             image_preview: self.image_preview.map(ImagePreview::values),
         }
     }

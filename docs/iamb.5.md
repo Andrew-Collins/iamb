@@ -82,6 +82,9 @@ overridden as described in *PROFILES*.
 **default_room** (type: string)
 > The room to show by default instead of a welcome-screen.
 
+**notifications** (type: boolean)
+> Defines wether notifications are enabled or not.
+
 **image_preview** (type: image_preview object)
 > Enable image previews and configure it. An empty object will enable the
 > feature with default settings, omitting it will disable the feature.
