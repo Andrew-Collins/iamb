@@ -26,6 +26,9 @@ pub async fn register_notifications(client: &Client, settings: &ApplicationSetti
                             return;
                         };
 
+                        if let Err(err) = std::process::Command::new("tput").arg("bel").status() {
+                            tracing::error!("Failed to send bel: {err}")
+                        }
                         // TODO: never show if room is currently open.
 
                         if let Err(err) = notify_rust::Notification::new()
