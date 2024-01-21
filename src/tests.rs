@@ -164,6 +164,7 @@ pub fn mock_room() -> RoomInfo {
         fetch_last: None,
         users_typing: None,
         display_names: HashMap::new(),
+        unread: false,
     }
 }
 

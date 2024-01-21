@@ -406,7 +406,13 @@ impl WindowOps<IambInfo> for RoomState {
         }
 
         match self {
-            RoomState::Chat(chat) => chat.draw(area, buf, focused, store),
+            RoomState::Chat(chat) => {
+                let room_id = chat.room().room_id().to_owned();
+                let info = store.application.get_room_info(room_id);
+                info.unread = false;
+
+                chat.draw(area, buf, focused, store);
+            },
             RoomState::Space(space) => {
                 Space::new(store).focus(focused).render(area, buf, space);
             },

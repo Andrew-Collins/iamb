@@ -718,6 +718,9 @@ pub struct RoomInfo {
 
     /// The display names for users in this room.
     pub display_names: HashMap<OwnedUserId, String>,
+
+    // Whether this room has unread messages
+    pub unread: bool,
 }
 
 impl RoomInfo {
@@ -827,6 +830,7 @@ impl RoomInfo {
 
         self.keys.insert(event_id.clone(), EventLocation::Message(key.clone()));
         self.messages.insert(key, msg.into());
+        self.unread = true;
 
         // Remove any echo.
         let key = (MessageTimeStamp::LocalEcho, event_id);

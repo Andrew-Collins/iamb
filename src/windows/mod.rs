@@ -734,6 +734,7 @@ pub struct RoomItem {
     room_info: MatrixRoomInfo,
     name: String,
     alias: Option<OwnedRoomAliasId>,
+    unread: bool,
 }
 
 impl RoomItem {
@@ -745,12 +746,13 @@ impl RoomItem {
         let name = info.name.clone().unwrap_or_default();
         let alias = room.canonical_alias();
         info.tags = room_info.deref().1.clone();
+        let unread = info.unread;
 
         if let Some(alias) = &alias {
             store.application.names.insert(alias.to_string(), room_id.to_owned());
         }
 
-        RoomItem { room_info, name, alias }
+        RoomItem { room_info, name, alias, unread }
     }
 
     #[inline]
@@ -802,7 +804,12 @@ impl ListItem<IambInfo> for RoomItem {
 
             Text::from(Line::from(spans))
         } else {
-            selected_text(self.name.as_str(), selected)
+            let mut txt = self.name.clone();
+            if self.unread {
+                txt = "* ".to_string() + &txt;
+            }
+            let span = Span::styled(txt, selected_style(selected));
+            Text::from(span)
         }
     }
 
@@ -912,6 +919,7 @@ pub struct SpaceItem {
     room_info: MatrixRoomInfo,
     name: String,
     alias: Option<OwnedRoomAliasId>,
+    unread: bool,
 }
 
 impl SpaceItem {
@@ -924,12 +932,22 @@ impl SpaceItem {
             .clone()
             .unwrap_or_default();
         let alias = room_info.0.canonical_alias();
+        let res = store.application.worker.space_members(room_id.to_owned());
+        let unread = match res {
+            Ok(members) => {
+                members.into_iter().any(|id| {
+                    let info = store.application.get_room_info(id);
+                    info.unread
+                })
+            },
+            Err(_) => false,
+        };
 
         if let Some(alias) = &alias {
             store.application.names.insert(alias.to_string(), room_id.to_owned());
         }
 
-        SpaceItem { room_info, name, alias }
+        SpaceItem { room_info, name, alias, unread }
     }
 
     #[inline]
@@ -966,7 +984,12 @@ impl ToString for SpaceItem {
 
 impl ListItem<IambInfo> for SpaceItem {
     fn show(&self, selected: bool, _: &ViewportContext<ListCursor>, _: &mut ProgramStore) -> Text {
-        selected_text(self.name.as_str(), selected)
+        let mut txt = self.name.clone();
+        if self.unread {
+            txt = "* ".to_string() + &txt;
+        }
+        let span = Span::styled(txt, selected_style(selected));
+        Text::from(span)
     }
 
     fn get_word(&self) -> Option<String> {
