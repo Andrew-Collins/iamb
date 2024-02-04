@@ -35,7 +35,8 @@ const DEFAULT_MEMBERS_SORT: [SortColumn<SortFieldUser>; 2] = [
     SortColumn(SortFieldUser::UserId, SortOrder::Ascending),
 ];
 
-const DEFAULT_ROOM_SORT: [SortColumn<SortFieldRoom>; 3] = [
+const DEFAULT_ROOM_SORT: [SortColumn<SortFieldRoom>; 4] = [
+    SortColumn(SortFieldRoom::Unread, SortOrder::Ascending),
     SortColumn(SortFieldRoom::Favorite, SortOrder::Ascending),
     SortColumn(SortFieldRoom::LowPriority, SortOrder::Ascending),
     SortColumn(SortFieldRoom::Name, SortOrder::Ascending),

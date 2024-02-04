@@ -160,6 +160,13 @@ fn user_cmp(a: &MemberItem, b: &MemberItem, field: &SortFieldUser) -> Ordering {
 
 fn room_cmp<T: RoomLikeItem>(a: &T, b: &T, field: &SortFieldRoom) -> Ordering {
     match field {
+        SortFieldRoom::Unread => {
+            let unreada = a.unread();
+            let unreadb = b.unread();
+
+            // If a has Favorite and b doesn't, it should sort earlier in room list.
+            unreadb.cmp(&unreada)
+        },
         SortFieldRoom::Favorite => {
             let fava = a.has_tag(TagName::Favorite);
             let favb = b.has_tag(TagName::Favorite);
@@ -243,6 +250,7 @@ fn append_tags<'a>(tags: &'a Tags, spans: &mut Vec<Span<'a>>, style: Style) {
 }
 
 trait RoomLikeItem {
+    fn unread(&self) -> bool;
     fn room_id(&self) -> &RoomId;
     fn has_tag(&self, tag: TagName) -> bool;
     fn alias(&self) -> Option<&RoomAliasId>;
@@ -767,6 +775,9 @@ impl RoomItem {
 }
 
 impl RoomLikeItem for RoomItem {
+    fn unread(&self) -> bool {
+        self.unread
+    }
     fn name(&self) -> &str {
         self.name.as_str()
     }
@@ -834,15 +845,18 @@ pub struct DirectItem {
     room_info: MatrixRoomInfo,
     name: String,
     alias: Option<OwnedRoomAliasId>,
+    unread: bool,
 }
 
 impl DirectItem {
     fn new(room_info: MatrixRoomInfo, store: &mut ProgramStore) -> Self {
         let room_id = room_info.0.room_id().to_owned();
-        let name = store.application.get_room_info(room_id).name.clone().unwrap_or_default();
+        let info = store.application.get_room_info(room_id.to_owned());
+        let name = info.name.clone().unwrap_or_default();
+        let unread = info.unread;
         let alias = room_info.0.canonical_alias();
 
-        DirectItem { room_info, name, alias }
+        DirectItem { room_info, name, alias, unread }
     }
 
     #[inline]
@@ -857,6 +871,10 @@ impl DirectItem {
 }
 
 impl RoomLikeItem for DirectItem {
+    fn unread(&self) -> bool {
+        self.unread
+    }
+
     fn name(&self) -> &str {
         self.name.as_str()
     }
@@ -957,6 +975,10 @@ impl SpaceItem {
 }
 
 impl RoomLikeItem for SpaceItem {
+    fn unread(&self) -> bool {
+        self.unread
+    }
+
     fn name(&self) -> &str {
         self.name.as_str()
     }
@@ -1314,6 +1336,10 @@ mod tests {
     }
 
     impl RoomLikeItem for &TestRoomItem {
+        fn unread(&self) -> bool {
+            false
+        }
+
         fn room_id(&self) -> &RoomId {
             self.room_id.as_ref()
         }

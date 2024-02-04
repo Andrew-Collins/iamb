@@ -210,6 +210,7 @@ bitflags::bitflags! {
 /// Fields that rooms and spaces can be sorted by.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SortFieldRoom {
+    Unread,
     Favorite,
     LowPriority,
     Name,
@@ -272,6 +273,7 @@ impl<'de> Visitor<'de> for SortRoomVisitor {
         };
 
         let field = match value {
+            "unread" => SortFieldRoom::Unread,
             "favorite" => SortFieldRoom::Favorite,
             "lowpriority" => SortFieldRoom::LowPriority,
             "name" => SortFieldRoom::Name,
