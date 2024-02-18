@@ -754,7 +754,7 @@ impl RoomItem {
         let name = info.name.clone().unwrap_or_default();
         let alias = room.canonical_alias();
         info.tags = room_info.deref().1.clone();
-        let unread = info.unread;
+        let unread = room.unread_notification_counts().notification_count > 0;
 
         if let Some(alias) = &alias {
             store.application.names.insert(alias.to_string(), room_id.to_owned());
@@ -850,10 +850,11 @@ pub struct DirectItem {
 
 impl DirectItem {
     fn new(room_info: MatrixRoomInfo, store: &mut ProgramStore) -> Self {
-        let room_id = room_info.0.room_id().to_owned();
+        let room = &room_info.0;
+        let room_id = room.room_id().to_owned();
         let info = store.application.get_room_info(room_id.to_owned());
         let name = info.name.clone().unwrap_or_default();
-        let unread = info.unread;
+        let unread = room.unread_notification_counts().notification_count > 0;
         let alias = room_info.0.canonical_alias();
 
         DirectItem { room_info, name, alias, unread }
@@ -942,24 +943,26 @@ pub struct SpaceItem {
 
 impl SpaceItem {
     fn new(room_info: MatrixRoomInfo, store: &mut ProgramStore) -> Self {
-        let room_id = room_info.0.room_id();
+        let room = &room_info.0;
+        let room_id = room.room_id();
         let name = store
             .application
             .get_room_info(room_id.to_owned())
             .name
             .clone()
             .unwrap_or_default();
-        let alias = room_info.0.canonical_alias();
-        let res = store.application.worker.space_members(room_id.to_owned());
-        let unread = match res {
-            Ok(members) => {
-                members.into_iter().any(|id| {
-                    let info = store.application.get_room_info(id);
-                    info.unread
-                })
-            },
-            Err(_) => false,
-        };
+        let alias = room.canonical_alias();
+        // let res = store.application.worker.space_members(room_id.to_owned());
+        let unread = room.unread_notification_counts().notification_count > 0;
+        // let unread = match res {
+        //     Ok(members) => {
+        //         members.into_iter().any(|id| {
+        //             let info = store.application.get_room_info(id);
+        //             info.unread
+        //         })
+        //     },
+        //     Err(_) => false,
+        // };
 
         if let Some(alias) = &alias {
             store.application.names.insert(alias.to_string(), room_id.to_owned());
