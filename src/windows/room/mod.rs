@@ -21,26 +21,11 @@ use modalkit::tui::{
 
 use modalkit::{
     editing::action::{
-        Action,
-        EditInfo,
-        EditResult,
-        Editable,
-        EditorAction,
-        Jumpable,
-        PromptAction,
-        Promptable,
-        Scrollable,
-        UIError,
+        Action, EditInfo, EditResult, Editable, EditorAction, Jumpable, PromptAction, Promptable,
+        Scrollable, UIError,
     },
     editing::base::{
-        Axis,
-        CloseFlags,
-        Count,
-        MoveDir1D,
-        OpenTarget,
-        PositionList,
-        ScrollStyle,
-        WordStyle,
+        Axis, CloseFlags, Count, MoveDir1D, OpenTarget, PositionList, ScrollStyle, WordStyle,
         WriteFlags,
     },
     editing::completion::CompletionList,
@@ -50,18 +35,8 @@ use modalkit::{
 };
 
 use crate::base::{
-    IambAction,
-    IambError,
-    IambId,
-    IambInfo,
-    IambResult,
-    MessageAction,
-    ProgramAction,
-    ProgramContext,
-    ProgramStore,
-    RoomAction,
-    RoomField,
-    SendAction,
+    IambAction, IambError, IambId, IambInfo, IambResult, MessageAction, ProgramAction,
+    ProgramContext, ProgramStore, RoomAction, RoomField, SendAction,
 };
 
 use self::chat::ChatState;
@@ -407,9 +382,9 @@ impl WindowOps<IambInfo> for RoomState {
 
         match self {
             RoomState::Chat(chat) => {
-                // let room_id = chat.room().room_id().to_owned();
-                // let info = store.application.get_room_info(room_id);
-                // info.unread = false;
+                let room_id = chat.room().room_id().to_owned();
+                let info = store.application.get_room_info(room_id);
+                info.unread = false;
 
                 chat.draw(area, buf, focused, store);
             },

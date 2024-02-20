@@ -17,10 +17,7 @@ use matrix_sdk::{
     ruma::{
         events::room::member::MembershipState,
         events::tag::{TagName, Tags},
-        OwnedRoomAliasId,
-        OwnedRoomId,
-        RoomAliasId,
-        RoomId,
+        OwnedRoomAliasId, OwnedRoomId, RoomAliasId, RoomId,
     },
 };
 
@@ -35,58 +32,25 @@ use modalkit::tui::{
 use modalkit::{
     editing::{
         action::{
-            Action,
-            EditError,
-            EditInfo,
-            EditResult,
-            Editable,
-            EditorAction,
-            Jumpable,
-            PromptAction,
-            Promptable,
-            Scrollable,
-            UIError,
-            WindowAction,
+            Action, EditError, EditInfo, EditResult, Editable, EditorAction, Jumpable,
+            PromptAction, Promptable, Scrollable, UIError, WindowAction,
         },
         base::{
-            CloseFlags,
-            MoveDir1D,
-            OpenTarget,
-            PositionList,
-            ScrollStyle,
-            ViewportContext,
-            WordStyle,
-            WriteFlags,
+            CloseFlags, MoveDir1D, OpenTarget, PositionList, ScrollStyle, ViewportContext,
+            WordStyle, WriteFlags,
         },
         completion::CompletionList,
     },
     widgets::{
         list::{List, ListCursor, ListItem, ListState},
-        TermOffset,
-        TerminalCursor,
-        Window,
-        WindowOps,
+        TermOffset, TerminalCursor, Window, WindowOps,
     },
 };
 
 use crate::base::{
-    ChatStore,
-    IambBufferId,
-    IambError,
-    IambId,
-    IambInfo,
-    IambResult,
-    MessageAction,
-    Need,
-    ProgramAction,
-    ProgramContext,
-    ProgramStore,
-    RoomAction,
-    SendAction,
-    SortColumn,
-    SortFieldRoom,
-    SortFieldUser,
-    SortOrder,
+    ChatStore, IambBufferId, IambError, IambId, IambInfo, IambResult, MessageAction, Need,
+    ProgramAction, ProgramContext, ProgramStore, RoomAction, SendAction, SortColumn, SortFieldRoom,
+    SortFieldUser, SortOrder,
 };
 
 use self::{room::RoomState, welcome::WelcomeState};
@@ -754,11 +718,12 @@ impl RoomItem {
         let name = info.name.clone().unwrap_or_default();
         let alias = room.canonical_alias();
         info.tags = room_info.deref().1.clone();
-        let unread = room.unread_notification_counts().notification_count > 0;
+        // let unread = room.unread_notification_counts().notification_count > 0;
+        let unread = info.unread;
 
-        if let Some(alias) = &alias {
-            store.application.names.insert(alias.to_string(), room_id.to_owned());
-        }
+        // if let Some(alias) = &alias {
+        //     store.application.names.insert(alias.to_string(), room_id.to_owned());
+        // }
 
         RoomItem { room_info, name, alias, unread }
     }
@@ -854,7 +819,8 @@ impl DirectItem {
         let room_id = room.room_id().to_owned();
         let info = store.application.get_room_info(room_id.to_owned());
         let name = info.name.clone().unwrap_or_default();
-        let unread = room.unread_notification_counts().notification_count > 0;
+        // let unread = room.unread_notification_counts().notification_count > 0;
+        let unread = info.unread;
         let alias = room_info.0.canonical_alias();
 
         DirectItem { room_info, name, alias, unread }
@@ -952,17 +918,15 @@ impl SpaceItem {
             .clone()
             .unwrap_or_default();
         let alias = room.canonical_alias();
-        // let res = store.application.worker.space_members(room_id.to_owned());
-        let unread = room.unread_notification_counts().notification_count > 0;
-        // let unread = match res {
-        //     Ok(members) => {
-        //         members.into_iter().any(|id| {
-        //             let info = store.application.get_room_info(id);
-        //             info.unread
-        //         })
-        //     },
-        //     Err(_) => false,
-        // };
+        let res = store.application.worker.space_members(room_id.to_owned());
+        // let unread = room.unread_notification_counts().notification_count > 0;
+        let unread = match res {
+            Ok(members) => members.into_iter().any(|id| {
+                let info = store.application.get_room_info(id);
+                info.unread
+            }),
+            Err(_) => false,
+        };
 
         if let Some(alias) = &alias {
             store.application.names.insert(alias.to_string(), room_id.to_owned());
