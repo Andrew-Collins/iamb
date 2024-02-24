@@ -7,6 +7,7 @@
 //! example, [sending messages][crate::base::SendAction] delegate to the [room window][RoomState],
 //! where we have the message bar and room ID easily accesible and resetable.
 use std::cmp::{Ord, Ordering, PartialOrd};
+use std::collections::HashSet;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -17,7 +18,10 @@ use matrix_sdk::{
     ruma::{
         events::room::member::MembershipState,
         events::tag::{TagName, Tags},
-        OwnedRoomAliasId, OwnedRoomId, RoomAliasId, RoomId,
+        OwnedRoomAliasId,
+        OwnedRoomId,
+        RoomAliasId,
+        RoomId,
     },
 };
 
@@ -32,25 +36,58 @@ use modalkit::tui::{
 use modalkit::{
     editing::{
         action::{
-            Action, EditError, EditInfo, EditResult, Editable, EditorAction, Jumpable,
-            PromptAction, Promptable, Scrollable, UIError, WindowAction,
+            Action,
+            EditError,
+            EditInfo,
+            EditResult,
+            Editable,
+            EditorAction,
+            Jumpable,
+            PromptAction,
+            Promptable,
+            Scrollable,
+            UIError,
+            WindowAction,
         },
         base::{
-            CloseFlags, MoveDir1D, OpenTarget, PositionList, ScrollStyle, ViewportContext,
-            WordStyle, WriteFlags,
+            CloseFlags,
+            MoveDir1D,
+            OpenTarget,
+            PositionList,
+            ScrollStyle,
+            ViewportContext,
+            WordStyle,
+            WriteFlags,
         },
         completion::CompletionList,
     },
     widgets::{
         list::{List, ListCursor, ListItem, ListState},
-        TermOffset, TerminalCursor, Window, WindowOps,
+        TermOffset,
+        TerminalCursor,
+        Window,
+        WindowOps,
     },
 };
 
 use crate::base::{
-    ChatStore, IambBufferId, IambError, IambId, IambInfo, IambResult, MessageAction, Need,
-    ProgramAction, ProgramContext, ProgramStore, RoomAction, SendAction, SortColumn, SortFieldRoom,
-    SortFieldUser, SortOrder,
+    ChatStore,
+    IambBufferId,
+    IambError,
+    IambId,
+    IambInfo,
+    IambResult,
+    MessageAction,
+    Need,
+    ProgramAction,
+    ProgramContext,
+    ProgramStore,
+    RoomAction,
+    SendAction,
+    SortColumn,
+    SortFieldRoom,
+    SortFieldUser,
+    SortOrder,
 };
 
 use self::{room::RoomState, welcome::WelcomeState};
@@ -632,7 +669,7 @@ impl Window<IambInfo> for IambWindow {
                 let (room, name, tags) = store.application.worker.get_room(room_id)?;
                 let room = RoomState::new(room, name, tags, store);
 
-                store.application.need_load.insert(room.id().to_owned(), Need::MEMBERS);
+                // store.application.need_load.insert(room.id().to_owned(), Need::MEMBERS);
                 return Ok(room.into());
             },
             IambId::DirectList => {
@@ -714,16 +751,31 @@ impl RoomItem {
         let room = &room_info.deref().0;
         let room_id = room.room_id();
 
+        let store_mess = store.application.need_load.get(room_id.to_owned()).is_some();
+        if store.application.get_room_info(room_id.to_owned()).messages.is_empty() && !store_mess {
+            store
+                .application
+                .need_load
+                .insert(room_id.to_owned(), Need::MESSAGES | Need::MEMBERS);
+        }
+
         let info = store.application.get_room_info(room_id.to_owned());
         let name = info.name.clone().unwrap_or_default();
         let alias = room.canonical_alias();
         info.tags = room_info.deref().1.clone();
-        // let unread = room.unread_notification_counts().notification_count > 0;
+        let our_id = room.own_user_id();
+        if let Some(((_, mess_id), _)) = info.messages.last_key_value() {
+            info.unread = !info
+                .event_receipts
+                .get(mess_id)
+                .unwrap_or(&HashSet::default())
+                .contains(our_id);
+        }
         let unread = info.unread;
 
-        // if let Some(alias) = &alias {
-        //     store.application.names.insert(alias.to_string(), room_id.to_owned());
-        // }
+        if let Some(alias) = &alias {
+            store.application.names.insert(alias.to_string(), room_id.to_owned());
+        }
 
         RoomItem { room_info, name, alias, unread }
     }
@@ -921,10 +973,12 @@ impl SpaceItem {
         let res = store.application.worker.space_members(room_id.to_owned());
         // let unread = room.unread_notification_counts().notification_count > 0;
         let unread = match res {
-            Ok(members) => members.into_iter().any(|id| {
-                let info = store.application.get_room_info(id);
-                info.unread
-            }),
+            Ok(members) => {
+                members.into_iter().any(|id| {
+                    let info = store.application.get_room_info(id);
+                    info.unread
+                })
+            },
             Err(_) => false,
         };
 

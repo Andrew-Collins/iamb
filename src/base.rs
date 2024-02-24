@@ -14,7 +14,12 @@ use std::time::{Duration, Instant};
 use emojis::Emoji;
 use ratatui_image::picker::{Picker, ProtocolType};
 use serde::{
-    de::Error as SerdeError, de::Visitor, Deserialize, Deserializer, Serialize, Serializer,
+    de::Error as SerdeError,
+    de::Visitor,
+    Deserialize,
+    Deserializer,
+    Serialize,
+    Serializer,
 };
 use tokio::sync::Mutex as AsyncMutex;
 use url::Url;
@@ -27,14 +32,21 @@ use matrix_sdk::{
             reaction::ReactionEvent,
             room::encrypted::RoomEncryptedEvent,
             room::message::{
-                OriginalRoomMessageEvent, Relation, Replacement, RoomMessageEvent,
+                OriginalRoomMessageEvent,
+                Relation,
+                Replacement,
+                RoomMessageEvent,
                 RoomMessageEventContent,
             },
             tag::{TagName, Tags},
             MessageLikeEvent,
         },
         presence::PresenceState,
-        EventId, OwnedEventId, OwnedRoomId, OwnedUserId, RoomId,
+        EventId,
+        OwnedEventId,
+        OwnedRoomId,
+        OwnedUserId,
+        RoomId,
     },
 };
 
@@ -42,8 +54,12 @@ use modalkit::{
     editing::{
         action::{Action, UIError, UIResult},
         application::{
-            ApplicationAction, ApplicationContentId, ApplicationError, ApplicationInfo,
-            ApplicationStore, ApplicationWindowId,
+            ApplicationAction,
+            ApplicationContentId,
+            ApplicationError,
+            ApplicationInfo,
+            ApplicationStore,
+            ApplicationWindowId,
         },
         base::{CommandType, WordStyle},
         completion::{complete_path, CompletionMap},
@@ -85,10 +101,10 @@ pub const MATRIX_ID_WORD: WordStyle = WordStyle::CharSet(is_mxid_char);
 /// in the server name, but in practice that should be uncommon, and people
 /// can just use `gf` and friends in Visual mode instead.
 fn is_mxid_char(c: char) -> bool {
-    return c >= 'a' && c <= 'z'
-        || c >= 'A' && c <= 'Z'
-        || c >= '0' && c <= '9'
-        || ":-./@_#!".contains(c);
+    return c >= 'a' && c <= 'z' ||
+        c >= 'A' && c <= 'Z' ||
+        c >= '0' && c <= '9' ||
+        ":-./@_#!".contains(c);
 }
 
 const ROOM_FETCH_DEBOUNCE: Duration = Duration::from_secs(2);
@@ -790,9 +806,9 @@ impl RoomInfo {
             MessageEvent::Local(_, content) => {
                 content.msgtype = new_content.msgtype;
             },
-            MessageEvent::Redacted(_)
-            | MessageEvent::EncryptedOriginal(_)
-            | MessageEvent::EncryptedRedacted(_) => {
+            MessageEvent::Redacted(_) |
+            MessageEvent::EncryptedOriginal(_) |
+            MessageEvent::EncryptedRedacted(_) => {
                 return;
             },
         }
@@ -816,7 +832,6 @@ impl RoomInfo {
 
         self.keys.insert(event_id.clone(), EventLocation::Message(key.clone()));
         self.messages.insert(key, msg.into());
-        self.unread = true;
 
         // Remove any echo.
         let key = (MessageTimeStamp::LocalEcho, event_id);
@@ -1053,6 +1068,9 @@ impl RoomNeeds {
     /// Mark a room for needing something to be loaded.
     pub fn insert(&mut self, room_id: OwnedRoomId, need: Need) {
         self.needs.entry(room_id).or_default().insert(need);
+    }
+    pub fn get(&self, room_id: OwnedRoomId) -> Option<&Need> {
+        self.needs.get(&room_id)
     }
 }
 
@@ -1686,10 +1704,10 @@ pub mod tests {
         need_load.insert(room_id.clone(), Need::MESSAGES);
         need_load.insert(room_id.clone(), Need::MEMBERS);
 
-        assert_eq!(
-            need_load.into_iter().collect::<Vec<(OwnedRoomId, Need)>>(),
-            vec![(room_id, Need::MESSAGES | Need::MEMBERS,)],
-        );
+        assert_eq!(need_load.into_iter().collect::<Vec<(OwnedRoomId, Need)>>(), vec![(
+            room_id,
+            Need::MESSAGES | Need::MEMBERS,
+        )],);
     }
 
     #[tokio::test]
