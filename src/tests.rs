@@ -197,6 +197,7 @@ pub fn mock_tunables() -> TunableValues {
         open_command: None,
         username_display: UserDisplayStyle::Username,
         message_user_color: false,
+        notifications: false,
         image_preview: None,
     }
 }

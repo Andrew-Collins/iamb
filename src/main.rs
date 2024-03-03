@@ -64,6 +64,7 @@ mod commands;
 mod config;
 mod keybindings;
 mod message;
+mod notifications;
 mod preview;
 mod sled_export;
 mod util;

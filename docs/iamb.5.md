@@ -85,6 +85,9 @@ overridden as described in *PROFILES*.
 **message_user_color** (type: boolean)
 > Defines whether or not the message body is colored like the username.
 
+**notifications** (type: boolean)
+> Defines wether notifications are enabled or not.
+
 **image_preview** (type: image_preview object)
 > Enable image previews and configure it. An empty object will enable the
 > feature with default settings, omitting it will disable the feature.
