@@ -66,7 +66,8 @@ pub async fn parse_notification(
         .and_then(|m| m.display_name())
         .unwrap_or_else(|| sender_id.localpart());
 
-    let body = event_notification_body(&event, sender_name, room.is_direct());
+    let body =
+        event_notification_body(&event, sender_name, room.is_direct().await.unwrap_or(false));
     return Ok((sender_name.to_string(), body));
 }
 
