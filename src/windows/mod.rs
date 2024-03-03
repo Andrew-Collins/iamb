@@ -168,6 +168,11 @@ fn user_cmp(a: &MemberItem, b: &MemberItem, field: &SortFieldUser) -> Ordering {
 }
 
 fn room_cmp<T: RoomLikeItem>(a: &T, b: &T, field: &SortFieldRoom) -> Ordering {
+    if a.is_unread() != b.is_unread() {
+        let unreada = a.is_unread();
+        let unreadb = b.is_unread();
+        return unreadb.cmp(&unreada);
+    }
     match field {
         SortFieldRoom::Favorite => {
             let fava = a.has_tag(TagName::Favorite);
@@ -266,6 +271,7 @@ fn append_tags<'a>(tags: Vec<Vec<Span<'a>>>, spans: &mut Vec<Span<'a>>, style: S
 }
 
 trait RoomLikeItem {
+    fn is_hidden(&self) -> bool;
     fn room_id(&self) -> &RoomId;
     fn has_tag(&self, tag: TagName) -> bool;
     fn is_unread(&self) -> bool;
@@ -492,6 +498,7 @@ impl WindowOps<IambInfo> for IambWindow {
                     .map(|room_info| DirectItem::new(room_info, store))
                     .collect::<Vec<_>>();
                 let fields = &store.application.settings.tunables.sort.dms;
+                items.retain(|r| r.is_unread() || !r.is_hidden());
                 items.sort_by(|a, b| room_fields_cmp(a, b, fields));
 
                 state.set(items);
@@ -537,6 +544,7 @@ impl WindowOps<IambInfo> for IambWindow {
                     .map(|room_info| RoomItem::new(room_info, store))
                     .collect::<Vec<_>>();
                 let fields = &store.application.settings.tunables.sort.rooms;
+                items.retain(|r| r.is_unread() || !r.is_hidden());
                 items.sort_by(|a, b| room_fields_cmp(a, b, fields));
 
                 state.set(items);
@@ -808,6 +816,7 @@ pub struct GenericChatItem {
     name: String,
     alias: Option<OwnedRoomAliasId>,
     unread: UnreadInfo,
+    hidden: bool,
     is_dm: bool,
 }
 
@@ -821,12 +830,18 @@ impl GenericChatItem {
         let alias = room.canonical_alias();
         let unread = info.unreads(&store.application.settings);
         info.tags = room_info.deref().1.clone();
+        let hidden = if let Some(tags) = info.tags.as_ref() {
+            tags.iter()
+                .any(|(name, _)| matches!(name, TagName::User(u) if u.as_ref() == "u.hidden"))
+        } else {
+            false
+        };
 
         if let Some(alias) = &alias {
             store.application.names.insert(alias.to_string(), room_id.to_owned());
         }
 
-        GenericChatItem { room_info, name, alias, is_dm, unread }
+        GenericChatItem { room_info, name, alias, is_dm, unread, hidden }
     }
 
     #[inline]
@@ -843,6 +858,10 @@ impl GenericChatItem {
 impl RoomLikeItem for GenericChatItem {
     fn name(&self) -> &str {
         self.name.as_str()
+    }
+
+    fn is_hidden(&self) -> bool {
+        self.hidden
     }
 
     fn alias(&self) -> Option<&RoomAliasId> {
@@ -919,6 +938,7 @@ pub struct RoomItem {
     name: String,
     alias: Option<OwnedRoomAliasId>,
     unread: UnreadInfo,
+    hidden: bool,
 }
 
 impl RoomItem {
@@ -931,12 +951,18 @@ impl RoomItem {
         let alias = room.canonical_alias();
         let unread = info.unreads(&store.application.settings);
         info.tags = room_info.deref().1.clone();
+        let hidden = if let Some(tags) = info.tags.as_ref() {
+            tags.iter()
+                .any(|(name, _)| matches!(name, TagName::User(u) if u.as_ref() == "u.hidden"))
+        } else {
+            false
+        };
 
         if let Some(alias) = &alias {
             store.application.names.insert(alias.to_string(), room_id.to_owned());
         }
 
-        RoomItem { room_info, name, alias, unread }
+        RoomItem { room_info, name, alias, unread, hidden }
     }
 
     #[inline]
@@ -951,6 +977,9 @@ impl RoomItem {
 }
 
 impl RoomLikeItem for RoomItem {
+    fn is_hidden(&self) -> bool {
+        self.hidden
+    }
     fn name(&self) -> &str {
         self.name.as_str()
     }
@@ -1024,19 +1053,25 @@ pub struct DirectItem {
     name: String,
     alias: Option<OwnedRoomAliasId>,
     unread: UnreadInfo,
+    hidden: bool,
 }
 
 impl DirectItem {
     fn new(room_info: MatrixRoomInfo, store: &mut ProgramStore) -> Self {
         let room_id = room_info.0.room_id().to_owned();
         let alias = room_info.0.canonical_alias();
-
         let info = store.application.rooms.get_or_default(room_id);
         let name = info.name.clone().unwrap_or_default();
         let unread = info.unreads(&store.application.settings);
         info.tags = room_info.deref().1.clone();
+        let hidden = if let Some(tags) = info.tags.as_ref() {
+            tags.iter()
+                .any(|(name, _)| matches!(name, TagName::User(u) if u.as_ref() == "u.hidden"))
+        } else {
+            false
+        };
 
-        DirectItem { room_info, name, alias, unread }
+        DirectItem { room_info, name, alias, unread, hidden }
     }
 
     #[inline]
@@ -1051,6 +1086,10 @@ impl DirectItem {
 }
 
 impl RoomLikeItem for DirectItem {
+    fn is_hidden(&self) -> bool {
+        self.hidden
+    }
+
     fn name(&self) -> &str {
         self.name.as_str()
     }
@@ -1150,6 +1189,10 @@ impl SpaceItem {
 }
 
 impl RoomLikeItem for SpaceItem {
+    fn is_hidden(&self) -> bool {
+        false
+    }
+
     fn name(&self) -> &str {
         self.name.as_str()
     }
@@ -1511,6 +1554,12 @@ mod tests {
     }
 
     impl RoomLikeItem for &TestRoomItem {
+        fn is_hidden(&self) -> bool {
+            self.tags
+                .iter()
+                .any(|t| matches!(t, TagName::User(u) if u.as_ref() == "u.hidden"))
+        }
+
         fn room_id(&self) -> &RoomId {
             self.room_id.as_ref()
         }
