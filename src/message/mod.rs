@@ -2,7 +2,6 @@
 use std::borrow::Cow;
 use std::cmp::{Ord, Ordering, PartialOrd};
 use std::collections::hash_map::DefaultHasher;
-use std::collections::hash_set;
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
 use std::fmt::{self, Display};
@@ -612,7 +611,7 @@ struct MessageFormatter<'a> {
     date: Option<Span<'a>>,
 
     /// Iterator over the users who have read up to this message.
-    read: Option<hash_set::Iter<'a, OwnedUserId>>,
+    read: Option<Vec<(&'a OwnedUserId, Style)>>,
 }
 
 impl<'a> MessageFormatter<'a> {
@@ -645,9 +644,17 @@ impl<'a> MessageFormatter<'a> {
                 line.push(time);
 
                 // Show read receipts.
-                let user_char =
-                    |user: &'a OwnedUserId| -> Span<'a> { settings.get_user_char_span(user) };
-                let mut read = self.read.iter_mut().flatten();
+                let user_char = |(user, style): &(&'a OwnedUserId, Style)| -> Span<'a> {
+                    // User settings take priority
+                    if settings.tunables.users.contains_key(*user) {
+                        settings.get_user_char_span(user)
+                    } else {
+                        let c = user.localpart().chars().next().unwrap_or(' ');
+                        Span::styled(String::from(c), *style)
+                    }
+                };
+                let read_vec = self.read.take().unwrap_or_default();
+                let mut read = read_vec.iter();
 
                 let a = read.next().map(user_char).unwrap_or_else(|| Span::raw(" "));
                 let b = read.next().map(user_char).unwrap_or_else(|| Span::raw(" "));
@@ -910,7 +917,22 @@ impl Message {
             let fill = width - user_gutter - TIME_GUTTER - READ_GUTTER;
             let user = self.show_sender(prev, true, info, settings);
             let time = self.timestamp.show_time();
-            let read = info.event_receipts.get(self.event.event_id()).map(|read| read.iter());
+            // let read: Option<Vec<_>> =
+            //     if let Some(users) = info.event_receipts.get(self.event.event_id()) {
+            //         Some(
+            //             users
+            //                 .iter()
+            //                 .map(|u| info.user_receipts_colors.get(u).unwrap_or(&Style::new()))
+            //                 .collect(),
+            //         )
+            //     } else {
+            //         None
+            //     };
+            let read = info.event_receipts.get(self.event.event_id()).map(|read| {
+                read.iter()
+                    .map(|u| (u, *info.user_receipts_colors.get(u).unwrap_or(&Style::new())))
+                    .collect()
+            });
 
             MessageFormatter { settings, cols, orig, fill, user, date, time, read }
         } else if user_gutter + TIME_GUTTER + MIN_MSG_LEN <= width {

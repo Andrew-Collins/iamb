@@ -54,7 +54,7 @@ const DEFAULT_ROOM_SORT: [SortColumn<SortFieldRoom>; 4] = [
 
 const DEFAULT_REQ_TIMEOUT: u64 = 120;
 
-const COLORS: [Color; 13] = [
+pub const COLORS: [Color; 13] = [
     Color::Blue,
     Color::Cyan,
     Color::Green,
@@ -70,12 +70,14 @@ const COLORS: [Color; 13] = [
     Color::Yellow,
 ];
 
-pub fn user_color(user: &str) -> Color {
+pub fn user_color_index(user: &str) -> usize {
     let mut hasher = DefaultHasher::new();
     user.hash(&mut hasher);
-    let color = hasher.finish() as usize % COLORS.len();
+    hasher.finish() as usize % COLORS.len()
+}
 
-    COLORS[color]
+pub fn user_color(user: &str) -> Color {
+    COLORS[user_color_index(user)]
 }
 
 pub fn user_style_from_color(color: Color) -> Style {

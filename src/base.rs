@@ -12,6 +12,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use emojis::Emoji;
+use ratatui::style::Style;
 use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Rect},
@@ -88,7 +89,7 @@ use modalkit::{
     prelude::{CommandType, WordStyle},
 };
 
-use crate::config::ImagePreviewProtocolValues;
+use crate::config::{user_color_index, user_style_from_color, ImagePreviewProtocolValues, COLORS};
 use crate::message::ImageStatus;
 use crate::preview::{source_from_event, spawn_insert_preview};
 use crate::{
@@ -793,6 +794,9 @@ pub struct RoomInfo {
     /// older than the oldest loaded event, that user will not be included.
     pub user_receipts: HashMap<OwnedUserId, OwnedEventId>,
 
+    /// A map of colors for each user that has a read recipt entry
+    pub user_receipts_colors: HashMap<OwnedUserId, Style>,
+
     /// A map of message identifiers to a map of reaction events.
     pub reactions: HashMap<OwnedEventId, MessageReactions>,
 
@@ -1107,7 +1111,22 @@ impl RoomInfo {
             .entry(event_id.clone())
             .or_default()
             .insert(user_id.clone());
-        self.user_receipts.insert(user_id, event_id);
+        self.user_receipts.insert(user_id.clone(), event_id);
+        if self.user_receipts_colors.contains_key(&user_id) {
+            return;
+        }
+        let c = user_id.localpart().chars().next().unwrap_or(' ');
+        let cnt = self.user_receipts.iter().fold(0, |acc, (u, _)| {
+            if c == u.localpart().chars().next().unwrap_or(' ') {
+                acc + 1
+            } else {
+                acc
+            }
+        });
+
+        let color_ind = user_color_index(&c.to_string()) + cnt;
+        self.user_receipts_colors
+            .insert(user_id, user_style_from_color(COLORS[color_ind % COLORS.len()]));
     }
 
     pub fn get_receipt(&self, user_id: &UserId) -> Option<&OwnedEventId> {
