@@ -46,7 +46,7 @@ use matrix_sdk::ruma::{
 };
 
 use ratatui::{
-    style::{Modifier as StyleModifier, Style},
+    style::{Color, Modifier as StyleModifier, Style},
     symbols::line::THICK_VERTICAL,
     text::{Line, Span, Text},
 };
@@ -55,7 +55,7 @@ use modalkit::editing::cursor::Cursor;
 use modalkit::prelude::*;
 use ratatui_image::protocol::Protocol;
 
-use crate::config::ImagePreviewSize;
+use crate::config::{user_style_from_color, ImagePreviewSize, UserColor};
 use crate::{
     base::RoomInfo,
     config::ApplicationSettings,
@@ -635,7 +635,6 @@ impl<'a> MessageFormatter<'a> {
 
         match self.cols {
             MessageColumns::Four => {
-                let settings = self.settings;
                 let user = self.user.take().unwrap_or(user_gutter_empty_span);
                 let time = self.time.take().unwrap_or(TIME_GUTTER_EMPTY_SPAN);
 
@@ -645,13 +644,8 @@ impl<'a> MessageFormatter<'a> {
 
                 // Show read receipts.
                 let user_char = |(user, style): &(&'a OwnedUserId, Style)| -> Span<'a> {
-                    // User settings take priority
-                    if settings.tunables.users.contains_key(*user) {
-                        settings.get_user_char_span(user)
-                    } else {
-                        let c = user.localpart().chars().next().unwrap_or(' ');
-                        Span::styled(String::from(c), *style)
-                    }
+                    let c = user.localpart().chars().next().unwrap_or(' ');
+                    Span::styled(String::from(c), *style)
                 };
                 let read_vec = self.read.take().unwrap_or_default();
                 let mut read = read_vec.iter();
@@ -916,21 +910,26 @@ impl Message {
             let cols = MessageColumns::Four;
             let fill = width - user_gutter - TIME_GUTTER - READ_GUTTER;
             let user = self.show_sender(prev, true, info, settings);
+            let tunable_users = &settings.tunables.users;
             let time = self.timestamp.show_time();
-            // let read: Option<Vec<_>> =
-            //     if let Some(users) = info.event_receipts.get(self.event.event_id()) {
-            //         Some(
-            //             users
-            //                 .iter()
-            //                 .map(|u| info.user_receipts_colors.get(u).unwrap_or(&Style::new()))
-            //                 .collect(),
-            //         )
-            //     } else {
-            //         None
-            //     };
             let read = info.event_receipts.get(self.event.event_id()).map(|read| {
                 read.iter()
-                    .map(|u| (u, *info.user_receipts_colors.get(u).unwrap_or(&Style::new())))
+                    .map(|u| {
+                        (
+                            u,
+                            // Use the Color found in the tunable settings
+                            // Otherwise get it from RoomInfo
+                            tunable_users
+                                .get(u)
+                                .map(|col| {
+                                    user_style_from_color(
+                                        col.color.as_ref().unwrap_or(&UserColor(Color::Black)).0,
+                                    )
+                                })
+                                .or(info.user_receipts_colors.get(u).copied())
+                                .unwrap_or_default(),
+                        )
+                    })
                     .collect()
             });
 
@@ -1183,6 +1182,10 @@ pub mod tests {
         },
         ImageInfo,
     };
+    use matrix_sdk::ruma::events::MessageLikeEvent;
+    use std::collections::HashSet;
+
+    use ratatui::style::Style;
 
     use super::*;
     use crate::tests::*;
@@ -1435,5 +1438,62 @@ pub mod tests {
             ))),
             "[Attached Video: Alt text (44 kB)]".to_string()
         );
+    }
+
+    #[test]
+    fn test_read_receipt_cols() {
+        let mut info = mock_room();
+        let settings = mock_settings();
+
+        let users = [
+            TEST_USER1.clone(),
+            TEST_USER2.clone(),
+            TEST_USER3.clone(),
+            TEST_USER4.clone(),
+            TEST_USER5.clone(),
+        ];
+        // Setup and insert message
+        let key = MSG2_KEY.clone();
+        let origin_server_ts = key.0.as_millis().unwrap();
+        let event_id = key.1.clone();
+
+        let sender = TEST_USER2.clone();
+
+        let content = RoomMessageEventContent::text_plain("writhe");
+
+        let event = OriginalRoomMessageEvent {
+            content,
+            event_id,
+            sender,
+            origin_server_ts,
+            room_id: TEST_ROOM1_ID.clone(),
+            unsigned: Default::default(),
+        };
+        let mess: crate::message::Message = event.clone().into();
+        info.insert(MessageLikeEvent::Original(event.clone()));
+
+        // Set all users as having read the message
+        for user_id in users.iter() {
+            info.set_receipt(user_id.clone(), event.event_id.clone());
+        }
+
+        // Create a formatter for the message
+        let prev = None;
+        let width = 120;
+        let formatter = mess.get_render_format(prev, width, &info, &settings);
+
+        // Get the read receipt styles
+        let mut reads = formatter.read.unwrap();
+
+        // Check the USER5 style is as per tunables
+        let user_5_id = TEST_USER5.clone();
+        let user_5_pos = reads.iter().position(|(u, _)| *u == &user_5_id).unwrap();
+        let Style { fg: user_5_col, .. } = reads[user_5_pos].1;
+        assert!(user_5_col.unwrap() == settings.get_user_color(&user_5_id));
+        reads.remove(user_5_pos);
+
+        // Check the rest of the user name colors are unique
+        let mut uniq = HashSet::new();
+        assert!(reads.clone().into_iter().all(move |(_, x)| uniq.insert(x)));
     }
 }
