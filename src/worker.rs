@@ -2,7 +2,8 @@
 //!
 //! The worker thread handles asynchronous work, and can receive messages from the main thread that
 //! block on a reply from the async worker.
-use std::collections::HashMap;
+use core::panic;
+use std::collections::{BTreeMap, HashMap};
 use std::convert::TryFrom;
 use std::fmt::{Debug, Formatter};
 use std::ops::{Deref, DerefMut};
@@ -13,6 +14,7 @@ use std::time::{Duration, Instant};
 
 use futures::{stream::FuturesUnordered, StreamExt};
 use gethostname::gethostname;
+use matrix_sdk::StateChanges;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
@@ -496,14 +498,14 @@ async fn send_receipts_forever(client: &Client, store: &AsyncProgramStore) {
         interval.tick().await;
 
         let locked = store.lock().await;
-        let user_id = &locked.application.settings.profile.user_id;
+        let user_id = locked.application.settings.profile.user_id.clone();
         let updates = client
             .joined_rooms()
             .into_iter()
             .filter_map(|room| {
                 let room_id = room.room_id().to_owned();
                 let info = locked.application.rooms.get(&room_id)?;
-                let new_receipt = info.get_receipt(user_id)?;
+                let new_receipt = info.get_receipt(&user_id)?;
                 let old_receipt = sent.get(&room_id);
                 if Some(new_receipt) != old_receipt {
                     Some((room_id, new_receipt.clone()))
@@ -515,22 +517,60 @@ async fn send_receipts_forever(client: &Client, store: &AsyncProgramStore) {
         drop(locked);
 
         for (room_id, new_receipt) in updates {
-            use matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType;
-
             let Some(room) = client.get_room(&room_id) else {
                 continue;
             };
 
+            if let Ok(Some((id, _r))) = room
+                .load_user_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, &user_id)
+                .await
+            {
+                if id == new_receipt {
+                    sent.insert(room_id.clone(), new_receipt.clone());
+                    tracing::warn!(
+                        ?room_id,
+                        "Read receipt is already up to date: {:?}",
+                        new_receipt
+                    );
+                    continue;
+                }
+            }
+
             match room
                 .send_single_receipt(
-                    ReceiptType::Read,
+                    matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType::Read,
                     ReceiptThread::Unthreaded,
                     new_receipt.clone(),
                 )
                 .await
             {
                 Ok(()) => {
-                    sent.insert(room_id, new_receipt);
+                    sent.insert(room_id.clone(), new_receipt.clone());
+                    tracing::warn!(?room_id, "Sent read receipt: {:?}", new_receipt);
+                    // let receipt = if let Ok(Some((id, r))) = room
+                    //     .load_user_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, &user_id)
+                    //     .await
+                    // {
+                    //     assert_eq!(id, new_receipt);
+                    //     tracing::warn!(?room_id, "Read receipt equal: {:?}", new_receipt);
+                    //     r
+                    // } else {
+                    //     panic!("Unable to get user receipt");
+                    // };
+                    // let mut changes = StateChanges::new("".to_string());
+                    // changes.sync_token = None;
+                    // let mut user_receipts = BTreeMap::new();
+                    // user_receipts.insert(user_id.clone(), receipt);
+                    // let mut receipts = BTreeMap::new();
+                    // receipts.insert(ReceiptType::Read, user_receipts);
+                    // let mut receipt_ev_content = BTreeMap::new();
+                    // receipt_ev_content.insert(new_receipt.clone(), receipts);
+                    // let receipt_ev_content: ReceiptEventContent =
+                    //     ReceiptEventContent(receipt_ev_content);
+                    //
+                    // changes.add_receipts(&room_id, receipt_ev_content);
+                    //
+                    // let _ = client.store().save_changes(&changes).await;
                 },
                 Err(e) => tracing::warn!(?room_id, "Failed to set read receipt: {e}"),
             }
