@@ -861,7 +861,26 @@ impl Message {
         }
     }
 
-    fn thread_root(&self) -> Option<OwnedEventId> {
+    pub fn get_thread(&self) -> Option<OwnedEventId> {
+        let content = match &self.event {
+            MessageEvent::EncryptedOriginal(_) => return None,
+            MessageEvent::EncryptedRedacted(_) => return None,
+            MessageEvent::Local(_, content) => content,
+            MessageEvent::Original(ev) => &ev.content,
+            MessageEvent::Redacted(_) => return None,
+        };
+
+        match &content.relates_to {
+            Some(Relation::Thread(Thread {
+                in_reply_to: Some(in_reply_to),
+                is_falling_back: false,
+                ..
+            })) => Some(in_reply_to.event_id.clone()),
+            Some(_) | None => None,
+        }
+    }
+
+    pub fn thread_root(&self) -> Option<OwnedEventId> {
         let content = match &self.event {
             MessageEvent::EncryptedOriginal(_) => return None,
             MessageEvent::EncryptedRedacted(_) => return None,

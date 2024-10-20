@@ -836,7 +836,7 @@ pub struct RoomInfo {
     /// Every receipt in this map should also have an entry in [`event_receipts`],
     /// however not every user has an entry. If a user's most recent receipt is
     /// older than the oldest loaded event, that user will not be included.
-    pub user_receipts: HashMap<OwnedUserId, OwnedEventId>,
+    pub user_receipts: HashMap<OwnedUserId, (OwnedEventId, Option<OwnedEventId>)>,
 
     /// A map of message identifiers to a map of reaction events.
     pub reactions: HashMap<OwnedEventId, MessageReactions>,
@@ -878,6 +878,31 @@ impl RoomInfo {
         } else {
             &mut self.messages
         }
+    }
+
+    pub fn get_latest_mess(&self) -> Option<(MessageTimeStamp, OwnedEventId)> {
+        // There has to be a base message
+        let ((latest_ts, latest), _) = self.messages.last_key_value()?;
+        let (mut latest_ts, mut latest) = (latest_ts.clone(), latest.clone());
+
+        for th_msgs in self.threads.values() {
+            if let Some(((ts, ev), _)) = th_msgs.last_key_value() {
+                if ts > &latest_ts {
+                    latest_ts = ts.clone();
+                    latest = ev.clone();
+                }
+            }
+        }
+        Some((latest_ts, latest))
+    }
+
+    pub fn find_thread(&self, ev: &OwnedEventId) -> Option<OwnedEventId> {
+        match self.keys.get(ev) {
+            Some(EventLocation::Message(thread, _)) => thread.clone(),
+            _ => None,
+        }
+        // let key = self.get_message_key(…)
+        // self.threads.iter().find_map(|(k, v)| v.contains_key(&key).then(|| k))
     }
 
     /// Get the event for the last message in a thread (or the thread root if there are no
@@ -1036,14 +1061,24 @@ impl RoomInfo {
 
     /// Indicates whether this room has unread messages.
     pub fn unreads(&self, settings: &ApplicationSettings) -> UnreadInfo {
-        let last_message = self.messages.last_key_value();
+        let last_message = self.get_latest_mess();
         let last_receipt = self.get_receipt(&settings.profile.user_id);
 
+        tracing::warn!("Room Latest: {:?}: {:?}, {:?}", self.name, last_message, last_receipt);
+
+        // let last_message = if let Some((_, thread)) = last_receipt {
+        //     self.get_thread(thread.as_deref()).and_then(|msgs| msgs.last_key_value())
+        // } else {
+        //     self.messages.last_key_value()
+        // };
+
+        // let last_message = self.messages.last_key_value();
+
         match (last_message, last_receipt) {
-            (Some(((ts, recent), _)), Some(last_read)) => {
-                UnreadInfo { unread: last_read != recent, latest: Some(*ts) }
+            (Some((ts, recent)), Some((last_read, _))) => {
+                UnreadInfo { unread: last_read != &recent, latest: Some(ts) }
             },
-            (Some(((ts, _), _)), None) => UnreadInfo { unread: false, latest: Some(*ts) },
+            (Some((ts, _)), None) => UnreadInfo { unread: false, latest: Some(ts) },
             (None, _) => UnreadInfo::default(),
         }
     }
@@ -1135,7 +1170,7 @@ impl RoomInfo {
     }
 
     fn clear_receipt(&mut self, user_id: &OwnedUserId) -> Option<()> {
-        let old_event_id = self.user_receipts.get(user_id)?;
+        let (old_event_id, _) = self.user_receipts.get(user_id)?;
         let old_receipts = self.event_receipts.get_mut(old_event_id)?;
         old_receipts.remove(user_id);
 
@@ -1146,24 +1181,62 @@ impl RoomInfo {
         None
     }
 
-    pub fn set_receipt(&mut self, user_id: OwnedUserId, event_id: OwnedEventId) {
+    pub fn set_receipt(
+        &mut self,
+        user_id: OwnedUserId,
+        event_id: OwnedEventId,
+        thread_id: Option<OwnedEventId>,
+    ) {
+        // let msg_data = self.get_event(&event_id);
+        // let th = if let Some(data) = msg_data {
+        //     tracing::warn!("Trying to get thread: {}", event_id.clone());
+        //     data.get_thread()
+        // } else {
+        //     None
+        // };
+
+        tracing::warn!(
+            "Receipt Ev: {}, User: {}, Thread: {:?}",
+            event_id.clone(),
+            user_id.clone(),
+            thread_id.clone()
+        );
+        if thread_id.is_none() {
+            let comp = (self.get_latest_mess(), self.get_message_key(&event_id));
+            match comp {
+                // Both timestamps are found and the new timestamp is older than the current
+                (Some((latest_ts, latest)), Some((new_ts, new))) if new_ts < &latest_ts => {
+                    tracing::warn!(
+                        "Rec New: {}: {:?}, Latest: {}: {:?}",
+                        new,
+                        new_ts,
+                        latest,
+                        latest_ts
+                    );
+                    return;
+                },
+                _ => (),
+            }
+        }
         self.clear_receipt(&user_id);
+        tracing::warn!("Receipt Was Updated Ev: {}, User: {}", event_id.clone(), user_id.clone());
+
         self.event_receipts
             .entry(event_id.clone())
             .or_default()
             .insert(user_id.clone());
-        self.user_receipts.insert(user_id, event_id);
+        self.user_receipts.insert(user_id, (event_id, thread_id));
     }
 
     pub fn fully_read(&mut self, user_id: OwnedUserId) {
-        let Some(((_, event_id), _)) = self.messages.last_key_value() else {
+        let Some((_, event_id)) = self.get_latest_mess() else {
             return;
         };
 
-        self.set_receipt(user_id, event_id.clone());
+        self.set_receipt(user_id, event_id.clone(), self.find_thread(&event_id));
     }
 
-    pub fn get_receipt(&self, user_id: &UserId) -> Option<&OwnedEventId> {
+    pub fn get_receipt(&self, user_id: &UserId) -> Option<&(OwnedEventId, Option<OwnedEventId>)> {
         self.user_receipts.get(user_id)
     }
 

@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 
 use futures::{stream::FuturesUnordered, StreamExt};
 use gethostname::gethostname;
+use matrix_sdk::ruma::events::RoomAccountDataEventType;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
@@ -115,7 +116,7 @@ const IAMB_USER_AGENT: &str = "iamb";
 const MIN_MSG_LOAD: u32 = 50;
 
 type MessageFetchResult =
-    IambResult<(Option<String>, Vec<(AnyMessageLikeEvent, Vec<OwnedUserId>)>)>;
+    IambResult<(Option<String>, Vec<(AnyMessageLikeEvent, Vec<(OwnedUserId, ReceiptThread)>)>)>;
 
 fn initial_devname() -> String {
     format!("{} on {}", IAMB_DEVICE_NAME, gethostname().to_string_lossy())
@@ -198,7 +199,7 @@ pub async fn create_room(
 
 async fn update_event_receipts(info: &mut RoomInfo, room: &MatrixRoom, event_id: &EventId) {
     let receipts = match room
-        .load_event_receipts(ReceiptType::Read, ReceiptThread::Main, event_id)
+        .load_event_receipts(ReceiptType::Read, ReceiptThread::Unthreaded, event_id)
         .await
     {
         Ok(receipts) => receipts,
@@ -208,8 +209,13 @@ async fn update_event_receipts(info: &mut RoomInfo, room: &MatrixRoom, event_id:
         },
     };
 
-    for (user_id, _) in receipts {
-        info.set_receipt(user_id, event_id.to_owned());
+    for (user_id, rec) in receipts {
+        let th = if let ReceiptThread::Thread(th) = rec.thread {
+            Some(th)
+        } else {
+            None
+        };
+        info.set_receipt(user_id, event_id.to_owned(), th);
     }
 }
 
@@ -264,7 +270,7 @@ async fn run_plan(client: &Client, store: &AsyncProgramStore, plan: Plan, permit
 
             let res = load_older_one(&client, &room_id, fetch_id, limit).await;
             let mut locked = store.lock().await;
-            load_insert(room_id, res, locked.deref_mut(), store_clone);
+            load_insert(room_id, res, locked.deref_mut(), store_clone).await;
         },
         Plan::Members(room_id) => {
             let res = members_load(client, &room_id).await;
@@ -300,17 +306,47 @@ async fn load_older_one(
             };
 
             let event_id = msg.event_id();
-            let receipts = match room
-                .load_event_receipts(ReceiptType::Read, ReceiptThread::Main, event_id)
+
+            let mut receipts = match room
+                .load_event_receipts(ReceiptType::Read, ReceiptThread::Unthreaded, event_id)
                 .await
             {
-                Ok(receipts) => receipts.into_iter().map(|(u, _)| u).collect(),
+                Ok(receipts) => {
+                    receipts.into_iter().map(|(u, _)| (u, ReceiptThread::Unthreaded)).collect()
+                },
                 Err(e) => {
                     tracing::warn!(?event_id, "failed to get event receipts: {e}");
                     vec![]
                 },
             };
 
+            // if let Ok(Some(full_read)) =
+            //     room.account_data(RoomAccountDataEventType::FullyRead).await
+            // {
+            //     tracing::warn!("Fully-read marker: {:?}", full_read.deserialize())
+            // }
+
+            // let mut receipts = vec![];
+            // for th_type in [ReceiptThread::Unthreaded, ReceiptThread::Main] {
+            //     match room
+            //         .load_event_receipts(ReceiptType::Read, th_type.clone(), event_id)
+            //         .await
+            //     {
+            //         Ok(rec) => receipts.extend(rec.into_iter().map(|(u, _)| (u, th_type.clone()))),
+            //         Err(e) => {
+            //             tracing::warn!(?event_id, "failed to get event receipts: {e}");
+            //         },
+            //     }
+            //     match room
+            //         .load_event_receipts(ReceiptType::ReadPrivate, th_type.clone(), event_id)
+            //         .await
+            //     {
+            //         Ok(rec) => receipts.extend(rec.into_iter().map(|(u, _)| (u, th_type.clone()))),
+            //         Err(e) => {
+            //             tracing::warn!(?event_id, "failed to get event receipts: {e}");
+            //         },
+            //     }
+            // }
             msgs.push((msg, receipts));
         }
 
@@ -320,7 +356,7 @@ async fn load_older_one(
     }
 }
 
-fn load_insert(
+async fn load_insert(
     room_id: OwnedRoomId,
     res: MessageFetchResult,
     locked: &mut ProgramStore,
@@ -331,17 +367,47 @@ fn load_insert(
     info.fetching = false;
     let client = &worker.client;
 
+    // let room = client.get_room(&room_id);
+    // if room.is_none() {
+    //     return;
+    // }
+    // let room = room.unwrap();
+
     match res {
         Ok((fetch_id, msgs)) => {
-            for (msg, receipts) in msgs.into_iter() {
+            for (msg, mut receipts) in msgs.into_iter() {
                 let sender = msg.sender().to_owned();
                 let _ = presences.get_or_default(sender);
 
-                for user_id in receipts {
-                    info.set_receipt(user_id, msg.event_id().to_owned());
-                }
+                // let msg_data = info.get_event(&event_id);
+                // if let Some(data) = msg_data {
+                //     if let Some(rel_ev) = data.thread_root() {
+                //         match room
+                //             .load_event_receipts(
+                //                 ReceiptType::Read,
+                //                 ReceiptThread::Thread(rel_ev.clone()),
+                //                 event_id,
+                //             )
+                //             .await
+                //         {
+                //             Ok(rec) => {
+                //                 receipts.extend(
+                //                     rec.into_iter()
+                //                         .map(|(u, _)| (u, ReceiptThread::Thread(rel_ev.clone()))),
+                //                 )
+                //             },
+                //             Err(e) => {
+                //                 tracing::warn!(?event_id, "failed to get event receipts: {e}");
+                //             },
+                //         }
+                //     }
+                // }
 
-                match msg {
+                // if room_id.as_str() == "!ePtflnJfvnYfwJUZwn:ac.home" {
+                //     tracing::warn!("LDDEB: Room: {:?}, Mess: {}", info.name, msg.event_id());
+                // }
+
+                match msg.clone() {
                     AnyMessageLikeEvent::RoomEncrypted(msg) => {
                         info.insert_encrypted(msg);
                     },
@@ -359,6 +425,32 @@ fn load_insert(
                         info.insert_reaction(ev);
                     },
                     _ => continue,
+                }
+
+                let event_id = msg.event_id();
+
+                if let Some(th) = info.find_thread(&event_id.to_owned()) {
+                    for (_, rec_th) in receipts.iter_mut() {
+                        *rec_th = ReceiptThread::Thread(th.clone());
+                    }
+                }
+                for (user_id, th_type) in receipts {
+                    if Some("acwork".to_owned()) == info.name {
+                        tracing::warn!("Find Thread: {:?}", info.find_thread(&event_id.to_owned()));
+                    }
+                    tracing::warn!(
+                        "LDDEB: Room: {:?}, Mess: {}, User: {}, Th: {:?}",
+                        info.name,
+                        msg.event_id(),
+                        user_id,
+                        th_type
+                    );
+                    let th = if let ReceiptThread::Thread(th) = th_type {
+                        Some(th)
+                    } else {
+                        None
+                    };
+                    info.set_receipt(user_id, msg.event_id().to_owned(), th);
                 }
             }
 
@@ -503,10 +595,10 @@ async fn send_receipts_forever(client: &Client, store: &AsyncProgramStore) {
             .filter_map(|room| {
                 let room_id = room.room_id().to_owned();
                 let info = locked.application.rooms.get(&room_id)?;
-                let new_receipt = info.get_receipt(user_id)?;
+                let (new_receipt, th) = info.get_receipt(user_id)?;
                 let old_receipt = sent.get(&room_id);
                 if Some(new_receipt) != old_receipt {
-                    Some((room_id, new_receipt.clone()))
+                    Some((room_id, new_receipt.clone(), th.clone()))
                 } else {
                     None
                 }
@@ -514,22 +606,31 @@ async fn send_receipts_forever(client: &Client, store: &AsyncProgramStore) {
             .collect::<Vec<_>>();
         drop(locked);
 
-        for (room_id, new_receipt) in updates {
+        for (room_id, new_receipt, _th) in updates {
             use matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType;
 
             let Some(room) = client.get_room(&room_id) else {
                 continue;
             };
 
+            // let th_type = if let Some(th) = th {
+            //     ReceiptThread::Thread(th)
+            // } else {
+            //     ReceiptThread::Unthreaded
+            // };
+            let th_type = ReceiptThread::Unthreaded;
+
             match room
-                .send_single_receipt(
-                    ReceiptType::Read,
-                    ReceiptThread::Unthreaded,
-                    new_receipt.clone(),
-                )
+                .send_single_receipt(ReceiptType::Read, th_type.clone(), new_receipt.clone())
                 .await
             {
                 Ok(()) => {
+                    tracing::warn!(
+                        "MSDEB: Sent: Room: {}, Mess: {}, Th: {:?}",
+                        room_id,
+                        new_receipt,
+                        th_type
+                    );
                     sent.insert(room_id, new_receipt);
                 },
                 Err(e) => tracing::warn!(?room_id, "Failed to set read receipt: {e}"),
@@ -1043,8 +1144,13 @@ impl ClientWorker {
                         let Some(receipts) = receipts.get(&ReceiptType::Read) else {
                             continue;
                         };
-                        for user_id in receipts.keys() {
-                            info.set_receipt(user_id.to_owned(), event_id.clone());
+                        for (user_id, rec) in receipts.iter() {
+                            let th = if let ReceiptThread::Thread(th) = &rec.thread {
+                                Some(th.clone())
+                            } else {
+                                None
+                            };
+                            info.set_receipt(user_id.to_owned(), event_id.clone(), th);
                         }
                     }
                 }

@@ -148,7 +148,7 @@ impl ChatState {
     }
 
     fn get_reply_to<'a>(&self, info: &'a RoomInfo) -> Option<&'a OriginalRoomMessageEvent> {
-        let thread = self.scrollback.get_thread(info)?;
+        let thread = self.scrollback.get_thread(info).1?;
         let key = self.reply_to.as_ref()?;
         let msg = thread.get(key)?;
 
